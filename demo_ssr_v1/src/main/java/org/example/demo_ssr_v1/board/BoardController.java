@@ -1,0 +1,186 @@
+package org.example.demo_ssr_v1.board;
+
+import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
+import org.example.demo_ssr_v1.purchase.PurchaseService;
+import org.example.demo_ssr_v1.reply.ReplyResponse;
+import org.example.demo_ssr_v1.reply.ReplyService;
+import org.example.demo_ssr_v1.user.User;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.List;
+
+@RequiredArgsConstructor
+@Controller // IoC
+public class BoardController {
+
+    private final BoardService boardService;
+    private final ReplyService replyService;
+    private final PurchaseService purchaseService;
+
+    // 내가 작성한 글만 보여야 한다 (인가 처리)
+    /**
+     * 게시글 수정 폼 페이지 요청
+     * @param id
+     * @param model
+     * @param session
+     * @return
+     */
+    // http://localhost:8080/board/1/update
+    @GetMapping("/board/{id}/update")
+    public String updateForm(
+            @PathVariable Long id,
+            Model model,
+            HttpSession session
+    ) {
+        // 1. 인증 검사 (O)
+        User sessionUser = (User) session.getAttribute("sessionUser");
+
+        // 2. 인가 처리 (O)
+        BoardResponse.UpdateFormDTO board = boardService.게시글수정화면요청(id, sessionUser.getId());
+
+        model.addAttribute("board", board);
+//        model.addAttribute("user", sessionUser.getUsername());
+        return "board/update-form";
+    }
+
+    // 내가 작성한 게시글 이라면 수정 가능 (인가 처리)
+    /**
+     * 게시글 수정 요청 (기능요청)
+     * @param id
+     * @param updateDTO
+     * @param session
+     * @return
+     */
+    // http://localhost:8080/board/1/update
+    @PostMapping("/board/{id}/update")
+    public String updateProc(
+            @PathVariable Long id,
+            BoardRequest.UpdateDTO updateDTO,
+            HttpSession session
+    ) {
+        User sessionUser = (User) session.getAttribute("sessionUser");
+        updateDTO.validate();
+        boardService.게시글수정(updateDTO, id, sessionUser.getId());
+
+        return "redirect:/board/list";
+    }
+
+    // 게시글 목록은 인가처리 필요 없음
+    // 게시글 목록 요청
+
+    /**
+     * 게시글 목록 페이징 처리 기능 추가
+     * @param model
+     * @return
+     * 예시 /board/list/?page=1&size=5&keyword="사용자입력값"
+     */
+    @GetMapping({"/board/list", "/"})
+    public String boardList(
+            Model model,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "3") int size,
+            @RequestParam(required = false) String keyword
+        ) {
+        int pageIndex = Math.max(0, page -1);
+        BoardResponse.PageDTO boardPage = boardService.게시글목록조회(pageIndex, size, keyword);
+        model.addAttribute("boardPage", boardPage);
+        model.addAttribute("keyword", keyword != null ? keyword : "");
+        return "board/list";
+    }
+
+    /**
+     * 게시글 저장 화면 요청
+     * @param session
+     * @return
+     */
+    // http://localhost:8080/board/save
+    @GetMapping("/board/save")
+    public String saveForm(HttpSession session) {
+        User sessionUser = (User) session.getAttribute("sessionUser");
+        return "board/save-form";
+    }
+
+    // 로그인은 되어있어야 한다. (누가 작성 한지 알아야 하기 때문에)
+    // 인가 처리는 아직 필요 없다. (저장만 하면 되기 때문에)
+    // 게시글 저장 기능 요청
+    // http://localhost:8080/board/save
+    @PostMapping("/board/save")
+    public String saveProc(BoardRequest.SaveDTO saveDTO, HttpSession session) {
+        // 1. 인증 검사 - 인터셉터
+        // 2. 유효성 검사(형식), 논리적인 검사는 (서비스단)
+        User sessionUser = (User) session.getAttribute("sessionUser");
+        boardService.게시글작성(saveDTO, sessionUser);
+        return "redirect:/";
+    }
+
+    // 인가처리 되어야 한다.
+    // 삭제 @DeleteMapping 이지만 form 태그 활용 없음 get, post (fetch 함수 활용)
+    /**
+     * 게시글 삭제 요청 기능
+     * @param id
+     * @param session
+     * @return
+     */
+    @PostMapping("/board/{id}/delete")
+    public String delete(
+            @PathVariable Long id,
+            HttpSession session
+    ) {
+        User sessionUser = (User) session.getAttribute("sessionUser");
+        boardService.게시글삭제(id, sessionUser.getId());
+        return "redirect:/";
+    }
+
+    /**
+     * 게시글 상세 보기 화면 요청
+     * @param boardId
+     * @param model
+     * @return
+     */
+    // http://localhost:8080/board/1
+    @GetMapping("/board/{id}")
+    public String detail(
+            @PathVariable(name = "id") Long boardId,
+            HttpSession session,
+            Model model
+    ) {
+        // 세션에 로그인 사용자 정보 조회 (없을 수도 있음)
+        User sessionUser = (User) session.getAttribute("sessionUser");
+        Long sessionUserId = sessionUser != null ? sessionUser.getId() : null;
+
+        BoardResponse.DetailDTO board = boardService.게시글상세조회(boardId, sessionUserId);
+        boolean isOwner = false;
+
+        if (sessionUser != null && board.getUserId() != null) {
+            isOwner = board.getUserId().equals(sessionUser.getId());
+        }
+
+        // 댓글 목록 조회 (추가)
+        // 로그인 안한 상태에서 댓글 목록 요청시에 sessionUserId 는 null 값
+        List<ReplyResponse.ListDTO> replyList = replyService.댓글목록조회(boardId, sessionUserId);
+
+        model.addAttribute("isOwner", isOwner);
+        model.addAttribute("board", board);
+        model.addAttribute("replyList", replyList);
+        return "board/detail";
+    }
+
+    @PostMapping("/board/{boardId}/purchase")
+    public String purchase(
+            @PathVariable Long boardId,
+            HttpSession session
+    ) {
+        // 1. 인증 검사 - 로인 인터셉터가 동작 함
+        User sessionUser = (User) session.getAttribute("sessionUser");
+        // 포인트 차감
+        // 구매 내역 저장 (insert)...
+        purchaseService.구매하기(sessionUser.getId(), boardId);
+        return "redirect:/board/" + boardId;
+    }
+}
