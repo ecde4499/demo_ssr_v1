@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import lombok.Data;
 import org.example.demo_ssr_v1._core.errors.exception.Exception400;
+import org.example.demo_ssr_v1._core.utils.MyDateUtil;
+
+import java.sql.Timestamp;
 
 public class PaymentResponse {
 
@@ -65,6 +68,36 @@ public class PaymentResponse {
             private String merchantUid;
             private String status;
             private Long paidAt;
+        }
+    }
+
+    @Data
+    public static class ListDTO {
+        private Long id;
+        private String merchantUid;
+        private String impUid;
+        private String timestamp;
+        private Integer amount;
+        private String status;
+        private String statusDisplay;
+
+        // 환불 관련 추가
+        private Boolean isRefundable; // 환불 가능 여부 (화면에 표시 여부)
+
+        public ListDTO(Payment payment, Boolean isRefundable) {
+            this.id = payment.getId();
+            this.merchantUid = payment.getMerchantUid();
+            this.impUid = payment.getImpUid();
+            this.isRefundable = isRefundable != null ? isRefundable : false;
+            if (payment.getTimestamp() != null) {
+                this.timestamp = MyDateUtil.time(payment.getTimestamp());
+            }
+            this.amount = payment.getAmount();
+            if ("paid".equals(payment.getStatus())) {
+                this.statusDisplay = "결제완료";
+            } else {
+                this.statusDisplay = "환불완료";
+            }
         }
     }
 }

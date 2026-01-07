@@ -70,7 +70,6 @@ public class PurchaseService {
     public List<PurchaseResponse.ListDTO> 구매내역조회(Long userId) {
         List<Purchase> purchaseList = purchaseRepository.findAllByUserIdWithBoard(userId);
 
-        // TODO 트랜내에서 엔티티를 DTO로 변환
         return purchaseList.stream()
                 .map(PurchaseResponse.ListDTO::new)
                 .toList();
